@@ -396,10 +396,16 @@
                 </div>
             </div>
             <div class="input-group">
-                <label data-zh="白蛋白 Albumin" data-en="Albumin">白蛋白 Albumin</label>
+                <label>
+                    <span data-zh="白蛋白 Albumin" data-en="Albumin">白蛋白 Albumin</span>
+                    <span class="label-hint" style="color: var(--danger); font-weight: 600;" data-zh="(单位：g/dL)" data-en="(unit: g/dL)">(单位：g/dL)</span>
+                </label>
                 <div class="input-wrapper">
-                    <input type="number" id="albumin" value="35" min="1" max="60" step="0.1">
-                    <span class="unit">g/L</span>
+                    <input type="number" id="albumin" value="3.5" min="0.1" max="10" step="0.1">
+                    <span class="unit">g/dL</span>
+                </div>
+                <div style="margin-top: 6px; padding: 8px 12px; background: #fef2f2; border-radius: 6px; font-size: 12px; color: #991b1b; border: 1px solid #fecaca;">
+                    <span data-zh="💡 提示：中国检验单通常为 g/L（如 35 g/L），请输入时除以 10（即 3.5）。若输入值＞15，系统将自动除以 10。" data-en="💡 Tip: Chinese lab reports usually use g/L (e.g., 35 g/L). Please divide by 10 (i.e., 3.5). Values > 15 will be auto-divided by 10.">💡 提示：中国检验单通常为 g/L（如 35 g/L），请输入时除以 10（即 3.5）。若输入值＞15，系统将自动除以 10。</span>
                 </div>
             </div>
         </div>
@@ -553,7 +559,13 @@
             const sii = parseFloat(document.getElementById('sii').value) || 1;
             const ntprobnp = parseFloat(document.getElementById('ntprobnp').value) || 1;
             const egfr = parseFloat(document.getElementById('egfr').value) || 0;
-            const albumin = parseFloat(document.getElementById('albumin').value) || 0;
+            let albumin = parseFloat(document.getElementById('albumin').value) || 0;
+            // 自动单位转换：若输入值 > 15，假设为 g/L，转换为 g/dL（模型训练单位）
+            let albuminUnitConverted = false;
+            if (albumin > 15) {
+                albumin = albumin / 10;
+                albuminUnitConverted = true;
+            }
             const hfpef = parseInt(document.getElementById('hfpef').value);
             const acei = parseInt(document.getElementById('acei_arb_arni').value);
             const bb = parseInt(document.getElementById('bb').value);
@@ -565,6 +577,9 @@
                 'egfr': egfr, 'albumin': albumin, 'hfpef': hfpef,
                 'acei_arb_arni': acei, 'bb': bb
             };
+
+            // 记录原始输入值用于显示
+            const albuminInputRaw = parseFloat(document.getElementById('albumin').value) || 0;
 
             let lp_28d = 0, lp_1y = 0;
             for (let v in vals) {
@@ -606,24 +621,30 @@
 
             // Formula display
             const f28 = params28d, f1y = params1y;
+            // Albumin 单位转换提示
+            const unitWarning = albuminUnitConverted ?
+                (currentLang === 'zh' ?
+                    `<div style="color:#dc2626; font-weight:600; margin-bottom:8px;">⚠️ 已自动将白蛋白 ${albuminInputRaw} g/L 转换为 ${albumin.toFixed(1)} g/dL 参与计算</div>` :
+                    `<div style="color:#dc2626; font-weight:600; margin-bottom:8px;">⚠️ Auto-converted albumin from ${albuminInputRaw} g/L to ${albumin.toFixed(1)} g/dL</div>`) : '';
+
             const formulaHTML = currentLang === 'zh' ?
-                `<b>28 天模型</b><br>
-                LP = ${f28['age'].toFixed(4)}×${age} + ${f28['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}×${egfr} + ${f28['albumin'].toFixed(4)}×${albumin} + ${f28['hfpef'].toFixed(4)}×${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}×${acei} + ${f28['bb'].toFixed(4)}×${bb}<br>
+                `${unitWarning}<b>28 天模型</b><br>
+                LP = ${f28['age'].toFixed(4)}×${age} + ${f28['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}×${egfr} + ${f28['albumin'].toFixed(4)}×${albumin.toFixed(1)} + ${f28['hfpef'].toFixed(4)}×${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}×${acei} + ${f28['bb'].toFixed(4)}×${bb}<br>
                 LP₂₈d = ${lp_28d.toFixed(4)}<br>
                 S(28) = S₀(28)^exp(LP) = ${s0_28d.toFixed(6)}^exp(${lp_28d.toFixed(4)}) = ${(surv_28d*100).toFixed(1)}%<br>
                 28天死亡风险 = ${risk_28d.toFixed(2)}%<br><br>
                 <b>1 年模型</b><br>
-                LP = ${f1y['age'].toFixed(4)}×${age} + ${f1y['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}×${egfr} + ${f1y['albumin'].toFixed(4)}×${albumin} + ${f1y['hfpef'].toFixed(4)}×${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}×${acei} + ${f1y['bb'].toFixed(4)}×${bb}<br>
+                LP = ${f1y['age'].toFixed(4)}×${age} + ${f1y['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}×${egfr} + ${f1y['albumin'].toFixed(4)}×${albumin.toFixed(1)} + ${f1y['hfpef'].toFixed(4)}×${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}×${acei} + ${f1y['bb'].toFixed(4)}×${bb}<br>
                 LP₁y = ${lp_1y.toFixed(4)}<br>
                 S(365) = S₀(365)^exp(LP) = ${s0_1y.toFixed(6)}^exp(${lp_1y.toFixed(4)}) = ${(surv_1y*100).toFixed(1)}%<br>
                 1年死亡风险 = ${risk_1y.toFixed(2)}%` :
-                `<b>28-Day Model</b><br>
-                LP = ${f28['age'].toFixed(4)}×${age} + ${f28['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}×${egfr} + ${f28['albumin'].toFixed(4)}×${albumin} + ${f28['hfpef'].toFixed(4)}×${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}×${acei} + ${f28['bb'].toFixed(4)}×${bb}<br>
+                `${unitWarning}<b>28-Day Model</b><br>
+                LP = ${f28['age'].toFixed(4)}×${age} + ${f28['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}×${egfr} + ${f28['albumin'].toFixed(4)}×${albumin.toFixed(1)} + ${f28['hfpef'].toFixed(4)}×${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}×${acei} + ${f28['bb'].toFixed(4)}×${bb}<br>
                 LP₂₈d = ${lp_28d.toFixed(4)}<br>
                 S(28) = S₀(28)^exp(LP) = ${s0_28d.toFixed(6)}^exp(${lp_28d.toFixed(4)}) = ${(surv_28d*100).toFixed(1)}%<br>
                 28-Day Risk = ${risk_28d.toFixed(2)}%<br><br>
                 <b>1-Year Model</b><br>
-                LP = ${f1y['age'].toFixed(4)}×${age} + ${f1y['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}×${egfr} + ${f1y['albumin'].toFixed(4)}×${albumin} + ${f1y['hfpef'].toFixed(4)}×${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}×${acei} + ${f1y['bb'].toFixed(4)}×${bb}<br>
+                LP = ${f1y['age'].toFixed(4)}×${age} + ${f1y['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}×${egfr} + ${f1y['albumin'].toFixed(4)}×${albumin.toFixed(1)} + ${f1y['hfpef'].toFixed(4)}×${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}×${acei} + ${f1y['bb'].toFixed(4)}×${bb}<br>
                 LP₁y = ${lp_1y.toFixed(4)}<br>
                 S(365) = S₀(365)^exp(LP) = ${s0_1y.toFixed(6)}^exp(${lp_1y.toFixed(4)}) = ${(surv_1y*100).toFixed(1)}%<br>
                 1-Year Risk = ${risk_1y.toFixed(2)}%`;
