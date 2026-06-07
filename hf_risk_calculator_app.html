@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="心力衰竭死亡风险评分计算器 - 基于MIMIC-IV队列的8变量简化Cox模型">
+    <title>HF Risk Calculator | 心衰死亡风险评分</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary: #7c3aed;
+            --danger: #dc2626;
+            --warning: #f59e0b;
+            --success: #16a34a;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+                         "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .lang-switch {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 1000;
+            display: flex;
+            gap: 6px;
+        }
+        .lang-switch button {
+            padding: 6px 14px;
+            border: 1px solid rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            transition: all 0.3s;
+        }
+        .lang-switch button.active {
+            background: white;
+            color: var(--primary);
+            font-weight: 600;
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 48px 20px 32px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        header::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            opacity: 0.3;
+        }
+        header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            position: relative;
+        }
+        header .subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+            position: relative;
+        }
+        header .badge {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 4px 12px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 12px;
+            font-size: 12px;
+            position: relative;
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 0 16px 40px;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-top: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.03);
+            border: 1px solid var(--border);
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+        }
+        .card-title .icon {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+        }
+        .input-group {
+            margin-bottom: 18px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .input-group .label-hint {
+            font-size: 12px;
+            color: var(--text-light);
+            font-weight: 400;
+            margin-left: 4px;
+        }
+        .input-wrapper {
+            position: relative;
+        }
+        .input-wrapper input,
+        .input-wrapper select {
+            width: 100%;
+            padding: 12px 44px 12px 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.2s;
+            background: #fafafa;
+            color: var(--text);
+        }
+        .input-wrapper input:focus,
+        .input-wrapper select:focus {
+            border-color: var(--primary);
+            background: white;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .input-wrapper .unit {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-light);
+            font-size: 13px;
+            pointer-events: none;
+        }
+        .input-wrapper .unit-select {
+            right: 30px;
+        }
+        .calc-btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            margin-top: 8px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 17px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+            transition: all 0.3s;
+        }
+        .calc-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37,99,235,0.4);
+        }
+        .calc-btn:active {
+            transform: translateY(0);
+        }
+        .results-section {
+            display: none;
+            margin-top: 20px;
+            animation: fadeIn 0.5s ease;
+        }
+        .results-section.show {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .result-card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.03);
+            border: 1px solid var(--border);
+        }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .result-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .risk-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+        }
+        .risk-low { background: var(--success); }
+        .risk-moderate { background: var(--warning); color: #422006; }
+        .risk-high { background: #ea580c; }
+        .risk-very-high { background: var(--danger); }
+        .gauge-bg {
+            height: 32px;
+            background: #f1f5f9;
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+        .gauge-fill {
+            height: 100%;
+            border-radius: 16px;
+            transition: width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 12px;
+            color: white;
+            font-weight: 700;
+            font-size: 13px;
+            min-width: 36px;
+        }
+        .gauge-fill.low { background: linear-gradient(90deg, var(--success), #4ade80); }
+        .gauge-fill.moderate { background: linear-gradient(90deg, var(--warning), #fbbf24); }
+        .gauge-fill.high { background: linear-gradient(90deg, #ea580c, #f97316); }
+        .gauge-fill.very-high { background: linear-gradient(90deg, var(--danger), #f87171); }
+        .risk-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .detail-box {
+            text-align: center;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 10px;
+        }
+        .detail-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .detail-label {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+        .formula-box {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 16px;
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            font-size: 12px;
+            color: var(--text-light);
+            line-height: 1.8;
+            overflow-x: auto;
+        }
+        .formula-box b {
+            color: var(--text);
+        }
+        .footer-info {
+            text-align: center;
+            padding: 32px 16px;
+            color: var(--text-light);
+            font-size: 12px;
+            line-height: 2;
+        }
+        .footer-info a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .footer-info .cite {
+            margin-top: 8px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--text-light);
+            text-align: left;
+        }
+        .download-btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 10px 20px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--primary);
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .download-btn:hover {
+            background: #f8fafc;
+            border-color: var(--primary);
+        }
+        @media (min-width: 768px) {
+            header { padding: 56px 20px 40px; }
+            header h1 { font-size: 28px; }
+            .container { padding: 0 24px 48px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="lang-switch">
+        <button class="active" onclick="setLang('zh')" id="btn-zh">中文</button>
+        <button onclick="setLang('en')" id="btn-en">English</button>
+    </div>
+
+    <header>
+        <h1 data-zh="🏥 心力衰竭死亡风险评分" data-en="🏥 HF Mortality Risk Calculator">🏥 心力衰竭死亡风险评分</h1>
+        <p class="subtitle" data-zh="基于 MIMIC-IV 队列的 8 变量简化 Cox 模型" data-en="8-Variable Simplified Cox Model based on MIMIC-IV">基于 MIMIC-IV 队列的 8 变量简化 Cox 模型</p>
+        <span class="badge" data-zh="外部验证: 广东医科大学队列 (n=1,284)" data-en="External Validated: GDMU Cohort (n=1,284)">外部验证: 广东医科大学队列 (n=1,284)</span>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">📋</span>
+                <span data-zh="患者基线信息" data-en="Patient Baseline">患者基线信息</span>
+            </div>
+            <div class="input-group">
+                <label data-zh="年龄 Age" data-en="Age">年龄 Age</label>
+                <div class="input-wrapper">
+                    <input type="number" id="age" value="75" min="18" max="120">
+                    <span class="unit" data-zh="岁" data-en="y">岁</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>
+                    <span data-zh="SII" data-en="SII">SII</span>
+                    <span class="label-hint" data-zh="(全身炎症反应指数 = NE × PLT / LY)" data-en="(Systemic Immune-Inflammation Index)">(全身炎症反应指数 = NE × PLT / LY)</span>
+                </label>
+                <div class="input-wrapper">
+                    <input type="number" id="sii" value="1000" min="1">
+                    <span class="unit">×10⁹/L</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>NT-proBNP</label>
+                <div class="input-wrapper">
+                    <input type="number" id="ntprobnp" value="5000" min="1">
+                    <span class="unit">pg/mL</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>
+                    <span data-zh="eGFR" data-en="eGFR">eGFR</span>
+                    <span class="label-hint" data-zh="(CKD-EPI公式)" data-en="(CKD-EPI)">(CKD-EPI公式)</span>
+                </label>
+                <div class="input-wrapper">
+                    <input type="number" id="egfr" value="60" min="1">
+                    <span class="unit">mL/min/1.73m²</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label data-zh="白蛋白 Albumin" data-en="Albumin">白蛋白 Albumin</label>
+                <div class="input-wrapper">
+                    <input type="number" id="albumin" value="35" min="1" max="60" step="0.1">
+                    <span class="unit">g/L</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">💊</span>
+                <span data-zh="临床特征与用药" data-en="Clinical Features &amp; Medications">临床特征与用药</span>
+            </div>
+            <div class="input-group">
+                <label data-zh="心衰分型" data-en="HF Phenotype">心衰分型</label>
+                <div class="input-wrapper">
+                    <select id="hfpef">
+                        <option value="0" data-zh="HFrEF (射血分数降低, LVEF ≤40%)" data-en="HFrEF (LVEF ≤40%)">HFrEF (射血分数降低, LVEF ≤40%)</option>
+                        <option value="1" selected data-zh="HFpEF (射血分数保留, LVEF ≥50%) / 未知" data-en="HFpEF (LVEF ≥50%) / Unknown">HFpEF (射血分数保留, LVEF ≥50%) / 未知</option>
+                    </select>
+                </div>
+            </div>
+            <div class="input-group">
+                <label data-zh="ACEI / ARB / ARNI 使用" data-en="ACEI / ARB / ARNI">ACEI / ARB / ARNI 使用</label>
+                <div class="input-wrapper">
+                    <select id="acei_arb_arni">
+                        <option value="1" selected data-zh="是" data-en="Yes">是</option>
+                        <option value="0" data-zh="否" data-en="No">否</option>
+                    </select>
+                </div>
+            </div>
+            <div class="input-group">
+                <label data-zh="Beta 受体阻滞剂使用" data-en="Beta-Blocker">Beta 受体阻滞剂使用</label>
+                <div class="input-wrapper">
+                    <select id="bb">
+                        <option value="1" selected data-zh="是" data-en="Yes">是</option>
+                        <option value="0" data-zh="否" data-en="No">否</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button class="calc-btn" onclick="calculateRisk()" data-zh="🔍 计算风险评分" data-en="🔍 Calculate Risk Score">🔍 计算风险评分</button>
+
+        <div class="results-section" id="results">
+            <div class="result-card">
+                <div class="result-header">
+                    <span class="result-title" data-zh="28 天死亡风险" data-en="28-Day Mortality Risk">28 天死亡风险</span>
+                    <span class="risk-badge" id="badge-28d">-</span>
+                </div>
+                <div class="gauge-bg">
+                    <div class="gauge-fill" id="gauge-28d" style="width:0%">0%</div>
+                </div>
+                <div class="risk-details">
+                    <div class="detail-box">
+                        <div class="detail-value" id="risk-28d-val">-</div>
+                        <div class="detail-label" data-zh="死亡风险" data-en="Mortality Risk">死亡风险</div>
+                    </div>
+                    <div class="detail-box">
+                        <div class="detail-value" id="surv-28d-val">-</div>
+                        <div class="detail-label" data-zh="生存概率" data-en="Survival Probability">生存概率</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <div class="result-header">
+                    <span class="result-title" data-zh="1 年死亡风险" data-en="1-Year Mortality Risk">1 年死亡风险</span>
+                    <span class="risk-badge" id="badge-1y">-</span>
+                </div>
+                <div class="gauge-bg">
+                    <div class="gauge-fill" id="gauge-1y" style="width:0%">0%</div>
+                </div>
+                <div class="risk-details">
+                    <div class="detail-box">
+                        <div class="detail-value" id="risk-1y-val">-</div>
+                        <div class="detail-label" data-zh="死亡风险" data-en="Mortality Risk">死亡风险</div>
+                    </div>
+                    <div class="detail-box">
+                        <div class="detail-value" id="surv-1y-val">-</div>
+                        <div class="detail-label" data-zh="生存概率" data-en="Survival Probability">生存概率</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">🧮</span>
+                    <span data-zh="计算过程" data-en="Calculation Steps">计算过程</span>
+                </div>
+                <div class="formula-box" id="formula"></div>
+                <button class="download-btn" onclick="downloadReport()" data-zh="📥 下载报告" data-en="📥 Download Report">📥 下载报告</button>
+            </div>
+        </div>
+
+        <div class="footer-info">
+            <p data-zh="本工具仅供学术研究参考，不构成临床诊疗建议。" data-en="This tool is for academic research only and does not constitute clinical advice.">
+                本工具仅供学术研究参考，不构成临床诊疗建议。
+            </p>
+            <p>
+                <span data-zh="模型开发" data-en="Model Development">模型开发</span>: MIMIC-IV (n=8,066) |
+                <span data-zh="时间验证" data-en="Temporal Validation">时间验证</span>: MIMIC-IV (n=4,203) |
+                <span data-zh="外部验证" data-en="External Validation">外部验证</span>: <span data-zh="广东医科大学队列" data-en="GDMU Cohort">广东医科大学队列</span> (n=1,284)
+            </p>
+            <div class="cite">
+                <b data-zh="引用" data-en="Citation">引用</b>: <span data-zh="基于 MIMIC-IV 和广东医科大学队列的心力衰竭短期与长期死亡风险预测模型" data-en="Short-term and Long-term Mortality Prediction Model for Heart Failure based on MIMIC-IV and GDMU Cohorts">基于 MIMIC-IV 和广东医科大学队列的心力衰竭短期与长期死亡风险预测模型</span>.
+                <span data-zh="该网页版计算器基于 LASSO-Cox 8 变量简化模型构建，采用 Schoenfeld 残差检验验证 PH 假定。" data-en="This web calculator is built on the LASSO-Cox 8-variable simplified model with PH assumption validated by Schoenfeld residuals.">该网页版计算器基于 LASSO-Cox 8 变量简化模型构建，采用 Schoenfeld 残差检验验证 PH 假定。</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========== MODEL PARAMETERS ==========
+        const params28d = {
+            "age": 0.028729172502538994,
+            "ln_sii": 0.32069124004760496,
+            "ln_ntprobnp": 0.24106571455543682,
+            "egfr": -0.0045958968976152976,
+            "albumin": -0.7317272428585606,
+            "hfpef": -0.5563498600289041,
+            "acei_arb_arni": -0.833474823574186,
+            "bb": -0.8866534829917214
+        };
+        const params1y = {
+            "age": 0.02865394595470026,
+            "ln_sii": 0.14994258093583088,
+            "ln_ntprobnp": 0.2362293659511323,
+            "egfr": -0.004095101209146466,
+            "albumin": -0.6927818902574748,
+            "hfpef": -0.3021675990778001,
+            "acei_arb_arni": -0.5486946892535789,
+            "bb": -0.5763747071796063
+        };
+        const s0_28d = 0.9036309980;
+        const s0_1y = 0.6952562420;
+
+        // ========== LANGUAGE ==========
+        let currentLang = 'zh';
+        function setLang(lang) {
+            currentLang = lang;
+            document.querySelectorAll('[data-zh]').forEach(el => {
+                el.textContent = el.getAttribute('data-' + lang);
+            });
+            document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
+            document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+            // Update dynamic content if results are shown
+            if (document.getElementById('results').classList.contains('show')) {
+                calculateRisk();
+            }
+        }
+
+        // ========== RISK CALCULATION ==========
+        function calculateRisk() {
+            const age = parseFloat(document.getElementById('age').value) || 0;
+            const sii = parseFloat(document.getElementById('sii').value) || 1;
+            const ntprobnp = parseFloat(document.getElementById('ntprobnp').value) || 1;
+            const egfr = parseFloat(document.getElementById('egfr').value) || 0;
+            const albumin = parseFloat(document.getElementById('albumin').value) || 0;
+            const hfpef = parseInt(document.getElementById('hfpef').value);
+            const acei = parseInt(document.getElementById('acei_arb_arni').value);
+            const bb = parseInt(document.getElementById('bb').value);
+
+            const ln_sii = Math.log(sii);
+            const ln_ntprobnp = Math.log(ntprobnp);
+            const vals = {
+                'age': age, 'ln_sii': ln_sii, 'ln_ntprobnp': ln_ntprobnp,
+                'egfr': egfr, 'albumin': albumin, 'hfpef': hfpef,
+                'acei_arb_arni': acei, 'bb': bb
+            };
+
+            let lp_28d = 0, lp_1y = 0;
+            for (let v in vals) {
+                lp_28d += params28d[v] * vals[v];
+                lp_1y += params1y[v] * vals[v];
+            }
+
+            const surv_28d = Math.pow(s0_28d, Math.exp(lp_28d));
+            const surv_1y = Math.pow(s0_1y, Math.exp(lp_1y));
+            const risk_28d = (1 - surv_28d) * 100;
+            const risk_1y = (1 - surv_1y) * 100;
+
+            function getRiskInfo(risk) {
+                if (risk < 5) return { cls: 'low', label: { zh: '低风险', en: 'Low Risk' } };
+                if (risk < 15) return { cls: 'moderate', label: { zh: '中风险', en: 'Moderate Risk' } };
+                if (risk < 30) return { cls: 'high', label: { zh: '高风险', en: 'High Risk' } };
+                return { cls: 'very-high', label: { zh: '极高风险', en: 'Very High Risk' } };
+            }
+
+            function updateCard(risk, surv, prefix) {
+                const info = getRiskInfo(risk);
+                const badge = document.getElementById('badge-' + prefix);
+                badge.className = 'risk-badge ' + info.cls;
+                badge.textContent = info.label[currentLang];
+
+                const gauge = document.getElementById('gauge-' + prefix);
+                gauge.className = 'gauge-fill ' + info.cls;
+                // Scale for visualization: cap at 100%
+                const gaugeWidth = Math.min(risk * 3, 100);
+                gauge.style.width = gaugeWidth + '%';
+                gauge.textContent = risk.toFixed(1) + '%';
+
+                document.getElementById('risk-' + prefix + '-val').textContent = risk.toFixed(1) + '%';
+                document.getElementById('surv-' + prefix + '-val').textContent = (surv * 100).toFixed(1) + '%';
+            }
+
+            updateCard(risk_28d, surv_28d, '28d');
+            updateCard(risk_1y, surv_1y, '1y');
+
+            // Formula display
+            const f28 = params28d, f1y = params1y;
+            const formulaHTML = currentLang === 'zh' ?
+                `<b>28 天模型</b><br>
+                LP = ${f28['age'].toFixed(4)}×${age} + ${f28['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}×${egfr} + ${f28['albumin'].toFixed(4)}×${albumin} + ${f28['hfpef'].toFixed(4)}×${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}×${acei} + ${f28['bb'].toFixed(4)}×${bb}<br>
+                LP₂₈d = ${lp_28d.toFixed(4)}<br>
+                S(28) = S₀(28)^exp(LP) = ${s0_28d.toFixed(6)}^exp(${lp_28d.toFixed(4)}) = ${(surv_28d*100).toFixed(1)}%<br>
+                28天死亡风险 = ${risk_28d.toFixed(2)}%<br><br>
+                <b>1 年模型</b><br>
+                LP = ${f1y['age'].toFixed(4)}×${age} + ${f1y['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}×${egfr} + ${f1y['albumin'].toFixed(4)}×${albumin} + ${f1y['hfpef'].toFixed(4)}×${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}×${acei} + ${f1y['bb'].toFixed(4)}×${bb}<br>
+                LP₁y = ${lp_1y.toFixed(4)}<br>
+                S(365) = S₀(365)^exp(LP) = ${s0_1y.toFixed(6)}^exp(${lp_1y.toFixed(4)}) = ${(surv_1y*100).toFixed(1)}%<br>
+                1年死亡风险 = ${risk_1y.toFixed(2)}%` :
+                `<b>28-Day Model</b><br>
+                LP = ${f28['age'].toFixed(4)}×${age} + ${f28['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}×${egfr} + ${f28['albumin'].toFixed(4)}×${albumin} + ${f28['hfpef'].toFixed(4)}×${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}×${acei} + ${f28['bb'].toFixed(4)}×${bb}<br>
+                LP₂₈d = ${lp_28d.toFixed(4)}<br>
+                S(28) = S₀(28)^exp(LP) = ${s0_28d.toFixed(6)}^exp(${lp_28d.toFixed(4)}) = ${(surv_28d*100).toFixed(1)}%<br>
+                28-Day Risk = ${risk_28d.toFixed(2)}%<br><br>
+                <b>1-Year Model</b><br>
+                LP = ${f1y['age'].toFixed(4)}×${age} + ${f1y['ln_sii'].toFixed(4)}×ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}×ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}×${egfr} + ${f1y['albumin'].toFixed(4)}×${albumin} + ${f1y['hfpef'].toFixed(4)}×${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}×${acei} + ${f1y['bb'].toFixed(4)}×${bb}<br>
+                LP₁y = ${lp_1y.toFixed(4)}<br>
+                S(365) = S₀(365)^exp(LP) = ${s0_1y.toFixed(6)}^exp(${lp_1y.toFixed(4)}) = ${(surv_1y*100).toFixed(1)}%<br>
+                1-Year Risk = ${risk_1y.toFixed(2)}%`;
+
+            document.getElementById('formula').innerHTML = formulaHTML;
+            document.getElementById('results').classList.add('show');
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            // Store for download
+            window.lastResult = { age, sii, ntprobnp, egfr, albumin, hfpef, acei, bb, risk_28d, risk_1y, lp_28d, lp_1y, surv_28d, surv_1y };
+        }
+
+        // ========== DOWNLOAD REPORT ==========
+        function downloadReport() {
+            if (!window.lastResult) return;
+            const r = window.lastResult;
+            const info = currentLang === 'zh' ? {
+                title: '心衰死亡风险评分报告',
+                date: '生成日期',
+                baseline: '基线信息',
+                result: '评估结果',
+                risk28: '28天死亡风险',
+                risk1y: '1年死亡风险',
+                low: '低风险',
+                mod: '中风险',
+                high: '高风险',
+                vhigh: '极高风险'
+            } : {
+                title: 'HF Mortality Risk Report',
+                date: 'Generated',
+                baseline: 'Baseline Information',
+                result: 'Risk Assessment',
+                risk28: '28-Day Mortality Risk',
+                risk1y: '1-Year Mortality Risk',
+                low: 'Low Risk',
+                mod: 'Moderate Risk',
+                high: 'High Risk',
+                vhigh: 'Very High Risk'
+            };
+
+            function getLabel(risk) {
+                if (risk < 5) return info.low;
+                if (risk < 15) return info.mod;
+                if (risk < 30) return info.high;
+                return info.vhigh;
+            }
+
+            const hfLabel = r.hfpef === 0 ? (currentLang==='zh'?'HFrEF':'HFrEF') : (currentLang==='zh'?'HFpEF/未知':'HFpEF/Unknown');
+            const yesNo = v => v === 1 ? (currentLang==='zh'?'是':'Yes') : (currentLang==='zh'?'否':'No');
+
+            const report = `
+=====================================
+${info.title}
+=====================================
+${info.date}: ${new Date().toLocaleString(currentLang === 'zh' ? 'zh-CN' : 'en-US')}
+
+[${info.baseline}]
+Age: ${r.age} y
+SII: ${r.sii} ×10⁹/L
+NT-proBNP: ${r.ntprobnp} pg/mL
+eGFR: ${r.egfr} mL/min/1.73m²
+Albumin: ${r.albumin} g/L
+HF Phenotype: ${hfLabel}
+ACEI/ARB/ARNI: ${yesNo(r.acei)}
+Beta-Blocker: ${yesNo(r.bb)}
+
+[${info.result}]
+${info.risk28}: ${r.risk_28d.toFixed(2)}% (${getLabel(r.risk_28d)})
+${info.risk1y}: ${r.risk_1y.toFixed(2)}% (${getLabel(r.risk_1y)})
+
+-------------------------------------
+Model: LASSO-Cox 8-variable simplified
+Development: MIMIC-IV (n=8,066)
+External Validation: GDMU (n=1,284)
+-------------------------------------
+`.trim();
+
+            const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `HF_Risk_Report_${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
