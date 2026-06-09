@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Heart Failure Mortality Risk Calculator based on the MIMIC-IV 8-variable simplified Cox model.">
+    <title>HF Risk Calculator</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary: #7c3aed;
+            --danger: #dc2626;
+            --warning: #f59e0b;
+            --success: #16a34a;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 48px 20px 32px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        header::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            opacity: 0.3;
+        }
+        header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            position: relative;
+        }
+        header .subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+            position: relative;
+        }
+        header .badge {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 4px 12px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 12px;
+            font-size: 12px;
+            position: relative;
+        }
+        .lang-switch {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 1000;
+            display: flex;
+            gap: 6px;
+        }
+        .lang-switch a {
+            padding: 6px 14px;
+            border: 1px solid rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            text-decoration: none;
+            backdrop-filter: blur(8px);
+            transition: all 0.3s;
+        }
+        .lang-switch a.active {
+            background: white;
+            color: var(--primary);
+            font-weight: 600;
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 0 16px 40px;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-top: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.03);
+            border: 1px solid var(--border);
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+        }
+        .card-title .icon {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+        }
+        .input-group {
+            margin-bottom: 18px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .input-group .label-hint {
+            font-size: 12px;
+            color: var(--text-light);
+            font-weight: 400;
+            margin-left: 4px;
+        }
+        .input-wrapper {
+            position: relative;
+        }
+        .input-wrapper input,
+        .input-wrapper select {
+            width: 100%;
+            padding: 12px 44px 12px 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.2s;
+            background: #fafafa;
+            color: var(--text);
+        }
+        .input-wrapper input:focus,
+        .input-wrapper select:focus {
+            border-color: var(--primary);
+            background: white;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .input-wrapper .unit {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-light);
+            font-size: 13px;
+            pointer-events: none;
+        }
+        .calc-btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            margin-top: 8px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 17px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+            transition: all 0.3s;
+        }
+        .calc-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37,99,235,0.4);
+        }
+        .calc-btn:active {
+            transform: translateY(0);
+        }
+        .results-section {
+            display: none;
+            margin-top: 20px;
+            animation: fadeIn 0.5s ease;
+        }
+        .results-section.show {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .result-card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.03);
+            border: 1px solid var(--border);
+        }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .result-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .risk-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+        }
+        .risk-low { background: var(--success); }
+        .risk-moderate { background: var(--warning); color: #422006; }
+        .risk-high { background: #ea580c; }
+        .risk-very-high { background: var(--danger); }
+        .gauge-bg {
+            height: 32px;
+            background: #f1f5f9;
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+        .gauge-fill {
+            height: 100%;
+            border-radius: 16px;
+            transition: width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 12px;
+            color: white;
+            font-weight: 700;
+            font-size: 13px;
+            min-width: 36px;
+        }
+        .gauge-fill.low { background: linear-gradient(90deg, var(--success), #4ade80); }
+        .gauge-fill.moderate { background: linear-gradient(90deg, var(--warning), #fbbf24); }
+        .gauge-fill.high { background: linear-gradient(90deg, #ea580c, #f97316); }
+        .gauge-fill.very-high { background: linear-gradient(90deg, var(--danger), #f87171); }
+        .risk-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .detail-box {
+            text-align: center;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 10px;
+        }
+        .detail-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .detail-label {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+        .formula-box {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 16px;
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            font-size: 12px;
+            color: var(--text-light);
+            line-height: 1.8;
+            overflow-x: auto;
+        }
+        .formula-box b {
+            color: var(--text);
+        }
+        .footer-info {
+            text-align: center;
+            padding: 32px 16px;
+            color: var(--text-light);
+            font-size: 12px;
+            line-height: 2;
+        }
+        .footer-info a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .footer-info .cite {
+            margin-top: 8px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--text-light);
+            text-align: left;
+        }
+        .download-btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 10px 20px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--primary);
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .download-btn:hover {
+            background: #f8fafc;
+            border-color: var(--primary);
+        }
+        .warning-box {
+            margin-top: 6px;
+            padding: 8px 12px;
+            background: #fef2f2;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        @media (min-width: 768px) {
+            header { padding: 56px 20px 40px; }
+            header h1 { font-size: 28px; }
+            .container { padding: 0 24px 48px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="lang-switch">
+        <a href="./index.html" class="active">English</a>
+        <a href="./hf_risk_calculator_app.html">中文</a>
+    </div>
+
+    <header>
+        <h1>Heart Failure Mortality Risk Calculator</h1>
+        <p class="subtitle">8-Variable Simplified Cox Model based on MIMIC-IV</p>
+        <span class="badge">Externally Validated: GDMU Cohort (n=1,284)</span>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">&#128203;</span>
+                Patient Baseline Information
+            </div>
+            <div class="input-group">
+                <label>Age</label>
+                <div class="input-wrapper">
+                    <input type="number" id="age" value="75" min="18" max="120">
+                    <span class="unit">years</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>
+                    SII
+                    <span class="label-hint">(Systemic Immune-Inflammation Index = NE &times; PLT / LY)</span>
+                </label>
+                <div class="input-wrapper">
+                    <input type="number" id="sii" value="1000" min="1">
+                    <span class="unit">&times;10&#8308;/L</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>NT-proBNP</label>
+                <div class="input-wrapper">
+                    <input type="number" id="ntprobnp" value="5000" min="1">
+                    <span class="unit">pg/mL</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>
+                    eGFR
+                    <span class="label-hint">(CKD-EPI)</span>
+                </label>
+                <div class="input-wrapper">
+                    <input type="number" id="egfr" value="60" min="1">
+                    <span class="unit">mL/min/1.73m&sup2;</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>
+                    Albumin
+                    <span class="label-hint" style="color: var(--danger); font-weight: 600;">(unit: g/dL)</span>
+                </label>
+                <div class="input-wrapper">
+                    <input type="number" id="albumin" value="3.5" min="0.1" max="10" step="0.1">
+                    <span class="unit">g/dL</span>
+                </div>
+                <div class="warning-box">
+                    &#128161; <strong>Tip:</strong> Chinese lab reports usually use <strong>g/L</strong> (e.g., 35 g/L). Please divide by 10 before entry (i.e., 3.5). Values &gt; 15 will be auto-converted.
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">&#128138;</span>
+                Clinical Features &amp; Medications
+            </div>
+            <div class="input-group">
+                <label>Heart Failure Phenotype</label>
+                <div class="input-wrapper">
+                    <select id="hfpef">
+                        <option value="0">HFrEF (LVEF &le; 40%)</option>
+                        <option value="1" selected>HFpEF (LVEF &ge; 50%) / Unknown</option>
+                    </select>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>ACEI / ARB / ARNI Use</label>
+                <div class="input-wrapper">
+                    <select id="acei_arb_arni">
+                        <option value="1" selected>Yes</option>
+                        <option value="0">No</option>
+                    </select>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>Beta-Blocker Use</label>
+                <div class="input-wrapper">
+                    <select id="bb">
+                        <option value="1" selected>Yes</option>
+                        <option value="0">No</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button class="calc-btn" onclick="calculateRisk()">&#128269; Calculate Risk Score</button>
+
+        <div class="results-section" id="results">
+            <div class="result-card">
+                <div class="result-header">
+                    <span class="result-title">28-Day Mortality Risk</span>
+                    <span class="risk-badge" id="badge-28d">-</span>
+                </div>
+                <div class="gauge-bg">
+                    <div class="gauge-fill" id="gauge-28d" style="width:0%">0%</div>
+                </div>
+                <div class="risk-details">
+                    <div class="detail-box">
+                        <div class="detail-value" id="risk-28d-val">-</div>
+                        <div class="detail-label">Mortality Risk</div>
+                    </div>
+                    <div class="detail-box">
+                        <div class="detail-value" id="surv-28d-val">-</div>
+                        <div class="detail-label">Survival Probability</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <div class="result-header">
+                    <span class="result-title">1-Year Mortality Risk</span>
+                    <span class="risk-badge" id="badge-1y">-</span>
+                </div>
+                <div class="gauge-bg">
+                    <div class="gauge-fill" id="gauge-1y" style="width:0%">0%</div>
+                </div>
+                <div class="risk-details">
+                    <div class="detail-box">
+                        <div class="detail-value" id="risk-1y-val">-</div>
+                        <div class="detail-label">Mortality Risk</div>
+                    </div>
+                    <div class="detail-box">
+                        <div class="detail-value" id="surv-1y-val">-</div>
+                        <div class="detail-label">Survival Probability</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">&#129518;</span>
+                    Calculation Steps
+                </div>
+                <div class="formula-box" id="formula"></div>
+                <button class="download-btn" onclick="downloadReport()">&#128229; Download Report</button>
+            </div>
+        </div>
+
+        <div class="footer-info">
+            <p>This tool is for <strong>academic research only</strong> and does not constitute clinical advice.</p>
+            <p>
+                Model Development: MIMIC-IV (n=8,066) |
+                Temporal Validation: MIMIC-IV (n=4,203) |
+                External Validation: Guangdong Medical University Cohort (n=1,284)
+            </p>
+            <div class="cite">
+                <strong>Citation:</strong> Short-term and Long-term Mortality Prediction Model for Heart Failure based on MIMIC-IV and GDMU Cohorts.
+                This web calculator is built on the LASSO-Cox 8-variable simplified model with the PH assumption validated by Schoenfeld residuals.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const params28d = {
+            "age": 0.028729172502538994,
+            "ln_sii": 0.32069124004760496,
+            "ln_ntprobnp": 0.24106571455543682,
+            "egfr": -0.0045958968976152976,
+            "albumin": -0.7317272428585606,
+            "hfpef": -0.5563498600289041,
+            "acei_arb_arni": -0.833474823574186,
+            "bb": -0.8866534829917214
+        };
+        const params1y = {
+            "age": 0.02865394595470026,
+            "ln_sii": 0.14994258093583088,
+            "ln_ntprobnp": 0.2362293659511323,
+            "egfr": -0.004095101209146466,
+            "albumin": -0.6927818902574748,
+            "hfpef": -0.3021675990778001,
+            "acei_arb_arni": -0.5486946892535789,
+            "bb": -0.5763747071796063
+        };
+        const s0_28d = 0.9036309980;
+        const s0_1y = 0.6952562420;
+
+        function calculateRisk() {
+            const age = parseFloat(document.getElementById('age').value) || 0;
+            const sii = parseFloat(document.getElementById('sii').value) || 1;
+            const ntprobnp = parseFloat(document.getElementById('ntprobnp').value) || 1;
+            const egfr = parseFloat(document.getElementById('egfr').value) || 0;
+            let albumin = parseFloat(document.getElementById('albumin').value) || 0;
+            let albuminUnitConverted = false;
+            if (albumin > 15) {
+                albumin = albumin / 10;
+                albuminUnitConverted = true;
+            }
+            const albuminInputRaw = parseFloat(document.getElementById('albumin').value) || 0;
+            const hfpef = parseInt(document.getElementById('hfpef').value);
+            const acei = parseInt(document.getElementById('acei_arb_arni').value);
+            const bb = parseInt(document.getElementById('bb').value);
+
+            const ln_sii = Math.log(sii);
+            const ln_ntprobnp = Math.log(ntprobnp);
+            const vals = {
+                'age': age, 'ln_sii': ln_sii, 'ln_ntprobnp': ln_ntprobnp,
+                'egfr': egfr, 'albumin': albumin, 'hfpef': hfpef,
+                'acei_arb_arni': acei, 'bb': bb
+            };
+
+            let lp_28d = 0, lp_1y = 0;
+            for (let v in vals) {
+                lp_28d += params28d[v] * vals[v];
+                lp_1y += params1y[v] * vals[v];
+            }
+
+            const surv_28d = Math.pow(s0_28d, Math.exp(lp_28d));
+            const surv_1y = Math.pow(s0_1y, Math.exp(lp_1y));
+            const risk_28d = (1 - surv_28d) * 100;
+            const risk_1y = (1 - surv_1y) * 100;
+
+            function getRiskInfo(risk) {
+                if (risk < 5) return { cls: 'low', label: 'Low Risk' };
+                if (risk < 15) return { cls: 'moderate', label: 'Moderate Risk' };
+                if (risk < 30) return { cls: 'high', label: 'High Risk' };
+                return { cls: 'very-high', label: 'Very High Risk' };
+            }
+
+            function updateCard(risk, surv, prefix) {
+                const info = getRiskInfo(risk);
+                const badge = document.getElementById('badge-' + prefix);
+                badge.className = 'risk-badge ' + info.cls;
+                badge.textContent = info.label;
+
+                const gauge = document.getElementById('gauge-' + prefix);
+                gauge.className = 'gauge-fill ' + info.cls;
+                const gaugeWidth = Math.min(risk * 3, 100);
+                gauge.style.width = gaugeWidth + '%';
+                gauge.textContent = risk.toFixed(1) + '%';
+
+                document.getElementById('risk-' + prefix + '-val').textContent = risk.toFixed(1) + '%';
+                document.getElementById('surv-' + prefix + '-val').textContent = (surv * 100).toFixed(1) + '%';
+            }
+
+            updateCard(risk_28d, surv_28d, '28d');
+            updateCard(risk_1y, surv_1y, '1y');
+
+            const f28 = params28d, f1y = params1y;
+            const unitWarning = albuminUnitConverted ?
+                `<div style="color:#dc2626; font-weight:600; margin-bottom:8px;">&#9888; Albumin auto-converted from ${albuminInputRaw} g/L to ${albumin.toFixed(1)} g/dL</div>` : '';
+
+            const formulaHTML =
+                `${unitWarning}<b>28-Day Model</b><br>
+                LP = ${f28['age'].toFixed(4)}&times;${age} + ${f28['ln_sii'].toFixed(4)}&times;ln(${sii.toFixed(0)}) + ${f28['ln_ntprobnp'].toFixed(4)}&times;ln(${ntprobnp.toFixed(0)}) + ${f28['egfr'].toFixed(4)}&times;${egfr} + ${f28['albumin'].toFixed(4)}&times;${albumin.toFixed(1)} + ${f28['hfpef'].toFixed(4)}&times;${hfpef} + ${f28['acei_arb_arni'].toFixed(4)}&times;${acei} + ${f28['bb'].toFixed(4)}&times;${bb}<br>
+                LP<sub>28d</sub> = ${lp_28d.toFixed(4)}<br>
+                S(28) = S<sub>0</sub>(28)<sup>exp(LP)</sup> = ${s0_28d.toFixed(6)}<sup>exp(${lp_28d.toFixed(4)})</sup> = ${(surv_28d*100).toFixed(1)}%<br>
+                28-Day Mortality Risk = ${risk_28d.toFixed(2)}%<br><br>
+                <b>1-Year Model</b><br>
+                LP = ${f1y['age'].toFixed(4)}&times;${age} + ${f1y['ln_sii'].toFixed(4)}&times;ln(${sii.toFixed(0)}) + ${f1y['ln_ntprobnp'].toFixed(4)}&times;ln(${ntprobnp.toFixed(0)}) + ${f1y['egfr'].toFixed(4)}&times;${egfr} + ${f1y['albumin'].toFixed(4)}&times;${albumin.toFixed(1)} + ${f1y['hfpef'].toFixed(4)}&times;${hfpef} + ${f1y['acei_arb_arni'].toFixed(4)}&times;${acei} + ${f1y['bb'].toFixed(4)}&times;${bb}<br>
+                LP<sub>1y</sub> = ${lp_1y.toFixed(4)}<br>
+                S(365) = S<sub>0</sub>(365)<sup>exp(LP)</sup> = ${s0_1y.toFixed(6)}<sup>exp(${lp_1y.toFixed(4)})</sup> = ${(surv_1y*100).toFixed(1)}%<br>
+                1-Year Mortality Risk = ${risk_1y.toFixed(2)}%`;
+
+            document.getElementById('formula').innerHTML = formulaHTML;
+            document.getElementById('results').classList.add('show');
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            window.lastResult = { age, sii, ntprobnp, egfr, albumin, hfpef, acei, bb, risk_28d, risk_1y, lp_28d, lp_1y, surv_28d, surv_1y };
+        }
+
+        function downloadReport() {
+            if (!window.lastResult) return;
+            const r = window.lastResult;
+            const info = {
+                title: 'HF Mortality Risk Report',
+                date: 'Generated',
+                baseline: 'Baseline Information',
+                result: 'Risk Assessment',
+                risk28: '28-Day Mortality Risk',
+                risk1y: '1-Year Mortality Risk',
+                low: 'Low Risk',
+                mod: 'Moderate Risk',
+                high: 'High Risk',
+                vhigh: 'Very High Risk'
+            };
+
+            function getLabel(risk) {
+                if (risk < 5) return info.low;
+                if (risk < 15) return info.mod;
+                if (risk < 30) return info.high;
+                return info.vhigh;
+            }
+
+            const hfLabel = r.hfpef === 0 ? 'HFrEF' : 'HFpEF/Unknown';
+            const yesNo = v => v === 1 ? 'Yes' : 'No';
+
+            const report = `
+=====================================
+${info.title}
+=====================================
+${info.date}: ${new Date().toLocaleString('en-US')}
+
+[${info.baseline}]
+Age: ${r.age} years
+SII: ${r.sii} x10^9/L
+NT-proBNP: ${r.ntprobnp} pg/mL
+eGFR: ${r.egfr} mL/min/1.73m2
+Albumin: ${r.albumin} g/dL
+HF Phenotype: ${hfLabel}
+ACEI/ARB/ARNI: ${yesNo(r.acei)}
+Beta-Blocker: ${yesNo(r.bb)}
+
+[${info.result}]
+${info.risk28}: ${r.risk_28d.toFixed(2)}% (${getLabel(r.risk_28d)})
+${info.risk1y}: ${r.risk_1y.toFixed(2)}% (${getLabel(r.risk_1y)})
+
+-------------------------------------
+Model: LASSO-Cox 8-variable simplified
+Development: MIMIC-IV (n=8,066)
+External Validation: GDMU (n=1,284)
+-------------------------------------
+`.trim();
+
+            const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `HF_Risk_Report_${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
