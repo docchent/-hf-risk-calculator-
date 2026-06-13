@@ -425,7 +425,8 @@
                 <div class="input-wrapper">
                     <select id="hfpef">
                         <option value="0">HFrEF (LVEF &le; 40%)</option>
-                        <option value="1" selected>HFpEF (LVEF &ge; 50%) / Unknown</option>
+                        <option value="1">HFpEF (LVEF &ge; 50%)</option>
+                        <option value="2" selected>Mixed/Unknown (EF 41&ndash;49% or missing)</option>
                     </select>
                 </div>
             </div>
@@ -552,7 +553,8 @@
                 albuminUnitConverted = true;
             }
             const albuminInputRaw = parseFloat(document.getElementById('albumin').value) || 0;
-            const hfpef = parseInt(document.getElementById('hfpef').value);
+            const hfpefSelect = parseInt(document.getElementById('hfpef').value);
+            const hfpef = hfpefSelect === 0 ? 0 : 1; // HFrEF=0; HFpEF/Mixed/Unknown=1 for the model
             const acei = parseInt(document.getElementById('acei_arb_arni').value);
             const bb = parseInt(document.getElementById('bb').value);
 
@@ -621,7 +623,7 @@
             document.getElementById('results').classList.add('show');
             document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-            window.lastResult = { age, sii, ntprobnp, egfr, albumin, hfpef, acei, bb, risk_28d, risk_1y, lp_28d, lp_1y, surv_28d, surv_1y };
+            window.lastResult = { age, sii, ntprobnp, egfr, albumin, hfpef, hfpefSelect, acei, bb, risk_28d, risk_1y, lp_28d, lp_1y, surv_28d, surv_1y };
         }
 
         function downloadReport() {
@@ -647,7 +649,7 @@
                 return info.vhigh;
             }
 
-            const hfLabel = r.hfpef === 0 ? 'HFrEF' : 'HFpEF/Unknown';
+            const hfLabel = r.hfpefSelect === 0 ? 'HFrEF' : (r.hfpefSelect === 1 ? 'HFpEF' : 'Mixed/Unknown');
             const yesNo = v => v === 1 ? 'Yes' : 'No';
 
             const report = `
